@@ -41,15 +41,29 @@ def build_dataset(is_train, config):
 
 def main(args, config) :
 
-    print(f' step 1. model')
+
     model = build_model(config)
     patch_embed = model.patch_embed
+    #patch_embed: PatchEmbed((proj): Conv2d(3, 96, kernel_size=(4, 4), stride=(4, 4))
+    #(norm): LayerNorm((96,), eps=1e-05, elementwise_affine=True))
+
     print(f'patch_embed : {patch_embed}')
 
-    print(f' step 2. data')
-    images = torch.randn(1,4,224,224)
-    patch_embedded_img = patch_embed(images)
-    print(f'patch_embedded_img : {patch_embedded_img.shape}')
+    print(f' step 1. patch emb')
+    images = torch.randn(1, 3, 224, 224)     # batch, 3, 224, 224
+    patch_embedded_img = patch_embed(images) # batch, 56*56, 96
+    pos_embed = model.absolute_pos_embed
+    x = patch_embedded_img + pos_embed
+    x = model.pos_drop(x)
+    print(f'after patch embed, x (batch, 56*56+1, 96) : {x.shape}')
+
+    print(f' step 2. transformer block')
+    for layer in model.layers:
+        x = layer(x)
+
+
+
+
     #    target = torch.randn(1,4,64,64)
         # compute output
     #    with torch.cuda.amp.autocast(enabled=config.AMP_ENABLE):

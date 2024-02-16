@@ -463,6 +463,11 @@ class PatchEmbed(nn.Module):
         assert H == self.img_size[0] and W == self.img_size[1], \
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
         x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
+        # x =
+        # batch, 96, 56, 56
+        # batch, 96, 56*56
+        # batch, 3136, 96
+
         if self.norm is not None:
             x = self.norm(x)
         return x
@@ -499,9 +504,6 @@ class SwinTransformer(nn.Module):
                                       in_chans=in_chans,     # 3
                                       embed_dim=embed_dim,   # 96
                                       norm_layer=norm_layer if self.patch_norm else None)
-
-
-
         num_patches = self.patch_embed.num_patches
         patches_resolution = self.patch_embed.patches_resolution
         self.patches_resolution = patches_resolution
