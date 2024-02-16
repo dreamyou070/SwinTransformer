@@ -18,7 +18,7 @@ def build_dataset(is_train, config):
             dataset = CachedImageFolder(config.DATA.DATA_PATH, ann_file, prefix, transform,
                                         cache_mode=config.DATA.CACHE_MODE if is_train else 'part')
         else:
-            print(f'config.DATA.DATA_PATH: {config.DATA.DATA_PATH}')
+            config.DATA.DATA_PATH = r"/home/dreamyou070/MyData/anomaly_detection/MVTec3D-AD/carrot"
             root = os.path.join(config.DATA.DATA_PATH,
                                 prefix)
             dataset = datasets.ImageFolder(root, transform=transform)
