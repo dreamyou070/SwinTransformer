@@ -51,15 +51,20 @@ def main(args, config) :
 
     print(f' step 1. patch emb')
     images = torch.randn(1, 3, 224, 224)     # batch, 3, 224, 224
-    patch_embedded_img = patch_embed(images) # batch, 56*56, 96
-    pos_embed = model.absolute_pos_embed
-    x = patch_embedded_img + pos_embed
+    x = patch_embed(images) # batch, 56*56, 96
     x = model.pos_drop(x)
     print(f'after patch embed, x (batch, 56*56+1, 96) : {x.shape}')
 
     print(f' step 2. transformer block')
-    for layer in model.layers:
-        x = layer(x)
+    for basiclayer in model.layers:
+        for blk in basiclayer.blocks:
+            x = blk(x)
+        if basiclayer.downsample is not None:
+            x = basiclayer.downsample(x)
+    x = model.norm(x)  # B L C
+    x = model.avgpool(x.transpose(1, 2))  # B C 1
+    x = torch.flatten(x, 1)
+
 
 
 
