@@ -5,7 +5,6 @@ from config import get_config
 import os, sys
 kernel_path = os.path.abspath(os.path.join('..'))
 sys.path.append(kernel_path)
-from kernels.window_process.window_process import WindowProcess, WindowProcessReverse
 
 
 def window_partition(x, window_size):
@@ -67,12 +66,13 @@ def main(args, config) :
             # --------------------------------------------------------------------------------------------------------
             # cyclic shift
             if swintransformerblock.shift_size > 0:
-                if not swintransformerblock.fused_window_process:
-                    shifted_x = torch.roll(x, shifts=(-swintransformerblock.shift_size, -swintransformerblock.shift_size), dims=(1, 2))
+                _ = 'do not checl'
+                #if not swintransformerblock.fused_window_process:
+                #    shifted_x = torch.roll(x, shifts=(-swintransformerblock.shift_size, -swintransformerblock.shift_size), dims=(1, 2))
                     # partition windows
-                    x_windows = window_partition(shifted_x, swintransformerblock.window_size)  # nW*B, window_size, window_size, C
-                else:
-                    x_windows = WindowProcess.apply(x, B, H, W, C, -swintransformerblock.shift_size, swintransformerblock.window_size)
+                #    x_windows = window_partition(shifted_x, swintransformerblock.window_size)  # nW*B, window_size, window_size, C
+                #else:
+                #    x_windows = WindowProcess.apply(x, B, H, W, C, -swintransformerblock.shift_size, swintransformerblock.window_size)
             else:
                 shifted_x = x
                 # partition windows
@@ -89,11 +89,12 @@ def main(args, config) :
 
             # reverse cyclic shift
             if swintransformerblock.shift_size > 0:
-                if not swintransformerblock.fused_window_process:
-                    shifted_x = window_reverse(attn_windows, swintransformerblock.window_size, H, W)  # B H' W' C
-                    x = torch.roll(shifted_x, shifts=(swintransformerblock.shift_size, swintransformerblock.shift_size), dims=(1, 2))
-                else:
-                    x = WindowProcessReverse.apply(attn_windows, B, H, W, C, swintransformerblock.shift_size, swintransformerblock.window_size)
+                _ = 'do not checl'
+                #if not swintransformerblock.fused_window_process:
+                #    shifted_x = window_reverse(attn_windows, swintransformerblock.window_size, H, W)  # B H' W' C
+                #    x = torch.roll(shifted_x, shifts=(swintransformerblock.shift_size, swintransformerblock.shift_size), dims=(1, 2))
+                #else:
+                #    x = WindowProcessReverse.apply(attn_windows, B, H, W, C, swintransformerblock.shift_size, swintransformerblock.window_size)
             else:
                 shifted_x = window_reverse(attn_windows, swintransformerblock.window_size, H, W)  # B H' W' C
                 x = shifted_x
@@ -101,6 +102,8 @@ def main(args, config) :
             x = shortcut + swintransformerblock.drop_path(x)
             # FFN
             x = x + swintransformerblock.drop_path(swintransformerblock.mlp(swintransformerblock.norm2(x)))
+            import time
+            time.sleep(10000)
         if basiclayer.downsample is not None:
             x = basiclayer.downsample(x)
 
