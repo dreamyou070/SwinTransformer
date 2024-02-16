@@ -2,18 +2,59 @@ import torch
 from models import build_model
 import argparse
 from config import get_config
-from data.build import build_loader
+from data.build import build_transform
+import os
 from torchvision import datasets, transforms
+from data.cached_image_folder import CachedImageFolder
+from data.imagenet22k_dataset import IN22KDATASET
+
+def build_dataset(is_train, config):
+    transform = build_transform(is_train, config)
+    if config.DATA.DATASET == 'imagenet':
+        prefix = 'train' if is_train else 'val'
+        if config.DATA.ZIP_MODE:
+            ann_file = prefix + "_map.txt"
+            prefix = prefix + ".zip@/"
+            dataset = CachedImageFolder(config.DATA.DATA_PATH, ann_file, prefix, transform,
+                                        cache_mode=config.DATA.CACHE_MODE if is_train else 'part')
+        else:
+            root = os.path.join(config.DATA.DATA_PATH, prefix)
+            dataset = datasets.ImageFolder(root, transform=transform)
+        nb_classes = 1000
+    elif config.DATA.DATASET == 'imagenet22K':
+        prefix = 'ILSVRC2011fall_whole'
+        if is_train:
+            ann_file = prefix + "_map_train.txt"
+        else:
+            ann_file = prefix + "_map_val.txt"
+        dataset = IN22KDATASET(config.DATA.DATA_PATH, ann_file, transform)
+        nb_classes = 21841
+    else:
+        raise NotImplementedError("We only support ImageNet Now.")
+    return dataset, nb_classes
+
 def main(args, config) :
 
     print(f' step 1. model')
     model = build_model(config)
 
     print(f' step 2. data')
-    dataset = datasets.ImageFolder(root = '/home/dreamyou070/MyData/anomaly_detection/MVTec3D-AD/carrot/train_1/good',
-                                   transform=None)
+    dataset_val, _ = build_dataset(is_train=False, config=config)
+    sampler_val = torch.utils.data.distributed.DistributedSampler(dataset_val, shuffle=config.TEST.SHUFFLE)
+    data_loader_val = torch.utils.data.DataLoader(dataset_val,
+                                                  sampler=sampler_val,
+                                                  batch_size=config.DATA.BATCH_SIZE,
+                                                  shuffle=False,
+                                                  num_workers=config.DATA.NUM_WORKERS,
+                                                  pin_memory=config.DATA.PIN_MEMORY,
+                                                  drop_last=False)
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    for idx, (images, target) in enumerate(data_loader_val):
+        images = images.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+        # compute output
+        with torch.cuda.amp.autocast(enabled=config.AMP_ENABLE):
+            output = model(images)
 
 
 if __name__ == "__main__":
