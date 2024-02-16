@@ -7,7 +7,6 @@
 import torch
 import swin_window_process
 
-
 class WindowProcess(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, B, H, W, C, shift_size, window_size):

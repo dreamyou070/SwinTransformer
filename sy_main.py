@@ -2,6 +2,9 @@ import torch
 from models import build_model
 import argparse
 from config import get_config
+import os, sys
+kernel_path = os.path.abspath(os.path.join('..'))
+sys.path.append(kernel_path)
 from kernels.window_process.window_process import WindowProcess, WindowProcessReverse
 
 

@@ -108,7 +108,6 @@ at::Tensor window_merge_and_roll_forward(
     return window_merge_and_roll_forward_cuda(input, B, H, W, C, shift_size, window_size);
 }
 
-
 at::Tensor window_merge_and_roll_backward(
     at::Tensor & grad_in, 
     //at::Tensor & grad_out,
