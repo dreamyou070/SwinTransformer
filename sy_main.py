@@ -57,13 +57,47 @@ def main(args, config) :
 
     print(f' step 2. transformer block')
     for basiclayer in model.layers:
-        for blk in basiclayer.blocks:
-            x = blk(x)
+        for swintransformerblock in basiclayer.blocks:
+
+
+            print(f'swintransformerblock.shift_size : {swintransformerblock.shift_size}')
+            print(f'swintransformerblock.window_size : {swintransformerblock.window_size}')
+            print(f'input to the swinfertransformerblock : {x.shape}')
+            x = swintransformerblock(x)
+            print(f'output of the swintransformerblock : {x.shape}')
+
         if basiclayer.downsample is not None:
             x = basiclayer.downsample(x)
     x = model.norm(x)  # B L C
     x = model.avgpool(x.transpose(1, 2))  # B C 1
     x = torch.flatten(x, 1)
+    """
+        
+        
+        B, L, C = x.shape # 1, 56*56, 96
+        assert L == H * W, "input feature has wrong size"
+        shortcut = x
+        x = swintransformerblock.norm1(x)
+        x = x.view(B, H, W, C) # 1, 56, 56, 96
+        shifted_x = x
+        # partition windows
+        x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
+        x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
+
+        # W-MSA/SW-MSA
+        attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
+
+        # merge windows
+        attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
+
+        # reverse cyclic shift
+        shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
+        x = shifted_x
+        x = x.view(B, H * W, C)
+        x = shortcut + self.drop_path(x)
+        # FFN
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+    """
 
 
 
