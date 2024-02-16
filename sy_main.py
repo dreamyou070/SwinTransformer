@@ -81,17 +81,11 @@ def main(args, config) :
             x_windows = x_windows.view(-1, 7*7, C)  # nW*B, window_size*window_size, C
             print(f'after window partitioning, x_windows (nW*B, window_size*window_size, C) : {x_windows.shape}')
             # W-MSA/SW-MSA : window attention
-
-            print(f'attention mask : {swintransformerblock.attn_mask}')
             attn_windows = swintransformerblock.attn(x_windows,
-                                                     mask=swintransformerblock.attn_mask)  # nW*B, window_size*window_size, C
-
-
+                                                     mask=swintransformerblock.attn_mask)  # nW*B, window_size*window_size, C (again 64=window num, 49=window len, 96)
             print(f'after attn, attn_windows (nW*B, window_size*window_size, C) : {attn_windows.shape}')
-
             # merge windows
-            attn_windows = attn_windows.view(-1, swintransformerblock.window_size, swintransformerblock.window_size, C)
-
+            attn_windows = attn_windows.view(-1, swintransformerblock.window_size, swintransformerblock.window_size, C) # 64, 7, 7, 96
             # reverse cyclic shift
             if swintransformerblock.shift_size > 0:
                 _ = 'do not checl'
@@ -101,7 +95,10 @@ def main(args, config) :
                 #else:
                 #    x = WindowProcessReverse.apply(attn_windows, B, H, W, C, swintransformerblock.shift_size, swintransformerblock.window_size)
             else:
-                shifted_x = window_reverse(attn_windows, swintransformerblock.window_size, H, W)  # B H' W' C
+                shifted_x = window_reverse(attn_windows, # [64, 7, 7, 96]
+                                           swintransformerblock.window_size,
+                                           H,
+                                           W)  # B H' W' C
                 x = shifted_x
             x = x.view(B, H * W, C)
             x = shortcut + swintransformerblock.drop_path(x)

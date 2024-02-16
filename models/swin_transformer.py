@@ -86,11 +86,9 @@ class WindowAttention(nn.Module):
         super().__init__()
         self.dim = dim
         self.window_size = window_size  # Wh, Ww
-        self.num_heads = num_heads
-        print(f'num head : {num_heads}')
+        self.num_heads = num_heads # 3, 6, ...
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5
-
         # define a parameter table of relative position bias
         self.relative_position_bias_table = nn.Parameter(torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads))  # 2*Wh-1 * 2*Ww-1, nH
 
@@ -125,8 +123,17 @@ class WindowAttention(nn.Module):
             x: input features with shape of (num_windows*B, N, C)
             mask: (0/-inf) mask with shape of (num_windows, Wh*Ww, Wh*Ww) or None
         """
-        B_, N, C = x.shape
-        qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        B_, N, C = x.shape # B_ = window num, N = window size, C = channel
+        print(f'before qkv, x : {x.shape}')
+        qkv = self.qkv(x)
+        print(f'after qkv layer, qkv shape : {qkv.shape}')
+        qkv = qkv.reshape(B_, N,
+                          3, # q,k,v
+                          self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        # reshape(64, 49, 3, 3, 64)
+        # [3,64,3,49,64]
+
+
         q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
         print(f'query : {q.shape}')
         print(f'key : {k.shape}')
@@ -137,12 +144,9 @@ class WindowAttention(nn.Module):
         relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(self.window_size[0] * self.window_size[1],
                                                                                                                self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
         # before permute,
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
-        # after permute, _, 49, 49
+        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww -> head, 49, 49
         print(f'relative_position_bias : {relative_position_bias.shape}')
-
-        attn = attn + relative_position_bias.unsqueeze(0)
-
+        attn = attn + relative_position_bias.unsqueeze(0) # attn = [64, 3, 49, 49] + [1, 3, 49, 49]
         if mask is not None:
             nW = mask.shape[0]
             attn = attn.view(B_ // nW, nW, self.num_heads, N, N) + mask.unsqueeze(1).unsqueeze(0)
@@ -150,9 +154,7 @@ class WindowAttention(nn.Module):
             attn = self.softmax(attn)
         else:
             attn = self.softmax(attn)
-
         attn = self.attn_drop(attn)
-
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
