@@ -2,45 +2,40 @@ import torch
 from models import build_model
 import argparse
 from config import get_config
-from data.build import build_transform
-import os
-from torchvision import datasets, transforms
-from data.cached_image_folder import CachedImageFolder
-from data.imagenet22k_dataset import IN22KDATASET
+from kernels.window_process.window_process import WindowProcess, WindowProcessReverse
 
-def build_dataset(is_train, config):
-    transform = build_transform(is_train, config)
-    if config.DATA.DATASET == 'imagenet':
-        prefix = 'train' if is_train else 'val'
 
-        if config.DATA.ZIP_MODE:
-            ann_file = prefix + "_map.txt"
-            prefix = prefix + ".zip@/"
-            dataset = CachedImageFolder(config.DATA.DATA_PATH, ann_file, prefix, transform,
-                                        cache_mode=config.DATA.CACHE_MODE if is_train else 'part')
-        else:
-            config.DATA.DATA_PATH = r"/home/dreamyou070/MyData/anomaly_detection/MVTec3D-AD/carrot"
-            root = os.path.join(config.DATA.DATA_PATH,
-                                prefix)
-            dataset = datasets.ImageFolder(root,
-                                           transform=transform)
+def window_partition(x, window_size):
+    """
+    Args:
+        x: (B, H, W, C)
+        window_size (int): window size
 
-        nb_classes = 1000
+    Returns:
+        windows: (num_windows*B, window_size, window_size, C)
+    """
+    B, H, W, C = x.shape
+    x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
+    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    return windows
+def window_reverse(windows, window_size, H, W):
+    """
+    Args:
+        windows: (num_windows*B, window_size, window_size, C)
+        window_size (int): Window size
+        H (int): Height of image
+        W (int): Width of image
 
-    elif config.DATA.DATASET == 'imagenet22K':
-        prefix = 'ILSVRC2011fall_whole'
-        if is_train:
-            ann_file = prefix + "_map_train.txt"
-        else:
-            ann_file = prefix + "_map_val.txt"
-        dataset = IN22KDATASET(config.DATA.DATA_PATH, ann_file, transform)
-        nb_classes = 21841
-    else:
-        raise NotImplementedError("We only support ImageNet Now.")
-    return dataset, nb_classes
+    Returns:
+        x: (B, H, W, C)
+    """
+    B = int(windows.shape[0] / (H * W / window_size / window_size))
+    x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
+    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
+    return x
+
 
 def main(args, config) :
-
 
     model = build_model(config)
     patch_embed = model.patch_embed
@@ -57,56 +52,61 @@ def main(args, config) :
 
     print(f' step 2. transformer block')
     for basiclayer in model.layers:
+
         for swintransformerblock in basiclayer.blocks:
 
+            H, W = swintransformerblock.input_resolution
+            B, L, C = x.shape
+            assert L == H * W, "input feature has wrong size"
+            shortcut = x
+            x = swintransformerblock.norm1(x)
+            x = x.view(B, H, W, C)
+            # --------------------------------------------------------------------------------------------------------
+            # cyclic shift
+            if swintransformerblock.shift_size > 0:
+                if not swintransformerblock.fused_window_process:
+                    shifted_x = torch.roll(x, shifts=(-swintransformerblock.shift_size, -swintransformerblock.shift_size), dims=(1, 2))
+                    # partition windows
+                    x_windows = window_partition(shifted_x, swintransformerblock.window_size)  # nW*B, window_size, window_size, C
+                else:
+                    x_windows = WindowProcess.apply(x, B, H, W, C, -swintransformerblock.shift_size, swintransformerblock.window_size)
+            else:
+                shifted_x = x
+                # partition windows
+                x_windows = window_partition(shifted_x,
+                                             swintransformerblock.window_size)  # nW*B, window_size, window_size, C
+            x_windows = x_windows.view(-1, 7, 7, C)  # nW*B, window_size*window_size, C
+            print(f'after window partitioning, x_windows (nW*B, window_size*window_size, C) : {x_windows.shape}')
+            # W-MSA/SW-MSA
+            attn_windows = swintransformerblock.attn(x_windows, mask=swintransformerblock.attn_mask)  # nW*B, window_size*window_size, C
+            print(f'after attn, attn_windows (nW*B, window_size*window_size, C) : {attn_windows.shape}')
 
-            print(f'swintransformerblock.shift_size : {swintransformerblock.shift_size}')
-            print(f'swintransformerblock.window_size : {swintransformerblock.window_size}')
-            print(f'input to the swinfertransformerblock : {x.shape}')
-            x = swintransformerblock(x)
-            print(f'output of the swintransformerblock : {x.shape}')
+            # merge windows
+            attn_windows = attn_windows.view(-1, swintransformerblock.window_size, swintransformerblock.window_size, C)
 
+            # reverse cyclic shift
+            if swintransformerblock.shift_size > 0:
+                if not swintransformerblock.fused_window_process:
+                    shifted_x = window_reverse(attn_windows, swintransformerblock.window_size, H, W)  # B H' W' C
+                    x = torch.roll(shifted_x, shifts=(swintransformerblock.shift_size, swintransformerblock.shift_size), dims=(1, 2))
+                else:
+                    x = WindowProcessReverse.apply(attn_windows, B, H, W, C, swintransformerblock.shift_size, swintransformerblock.window_size)
+            else:
+                shifted_x = window_reverse(attn_windows, swintransformerblock.window_size, H, W)  # B H' W' C
+                x = shifted_x
+            x = x.view(B, H * W, C)
+            x = shortcut + swintransformerblock.drop_path(x)
+            # FFN
+            x = x + swintransformerblock.drop_path(swintransformerblock.mlp(swintransformerblock.norm2(x)))
         if basiclayer.downsample is not None:
             x = basiclayer.downsample(x)
+
+
+
     x = model.norm(x)  # B L C
     x = model.avgpool(x.transpose(1, 2))  # B C 1
     x = torch.flatten(x, 1)
-    """
-        
-        
-        B, L, C = x.shape # 1, 56*56, 96
-        assert L == H * W, "input feature has wrong size"
-        shortcut = x
-        x = swintransformerblock.norm1(x)
-        x = x.view(B, H, W, C) # 1, 56, 56, 96
-        shifted_x = x
-        # partition windows
-        x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
-        x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
-        # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
-
-        # merge windows
-        attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
-
-        # reverse cyclic shift
-        shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
-        x = shifted_x
-        x = x.view(B, H * W, C)
-        x = shortcut + self.drop_path(x)
-        # FFN
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-    """
-
-
-
-
-
-    #    target = torch.randn(1,4,64,64)
-        # compute output
-    #    with torch.cuda.amp.autocast(enabled=config.AMP_ENABLE):
-     #       output = model(images)
 
 
 if __name__ == "__main__":
