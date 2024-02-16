@@ -46,13 +46,13 @@ def main(args, config) :
 
     print(f'patch_embed : {patch_embed}')
 
-    print(f' step 1. patch emb')
+    print(f' \n step 1. patch emb')
     images = torch.randn(1, 3, 224, 224)     # batch, 3, 224, 224
     x = patch_embed(images) # batch, 56*56, 96
     x = model.pos_drop(x)
     print(f'after patch embed, x (batch, 56*56+1, 96) : {x.shape}')
 
-    print(f' step 2. transformer block')
+    print(f' \n step 2. transformer block')
     for basiclayer in model.layers:
 
         for swintransformerblock in basiclayer.blocks:
@@ -78,10 +78,15 @@ def main(args, config) :
                 # partition windows
                 x_windows = window_partition(shifted_x,
                                              swintransformerblock.window_size)  # nW*B, window_size, window_size, C
-            x_windows = x_windows.view(-1, 7, 7, C)  # nW*B, window_size*window_size, C
+            x_windows = x_windows.view(-1, 7*7, C)  # nW*B, window_size*window_size, C
             print(f'after window partitioning, x_windows (nW*B, window_size*window_size, C) : {x_windows.shape}')
-            # W-MSA/SW-MSA
-            attn_windows = swintransformerblock.attn(x_windows, mask=swintransformerblock.attn_mask)  # nW*B, window_size*window_size, C
+            # W-MSA/SW-MSA : window attention
+
+            print(f'attention mask : {swintransformerblock.attn_mask}')
+            attn_windows = swintransformerblock.attn(x_windows,
+                                                     mask=swintransformerblock.attn_mask)  # nW*B, window_size*window_size, C
+
+
             print(f'after attn, attn_windows (nW*B, window_size*window_size, C) : {attn_windows.shape}')
 
             # merge windows

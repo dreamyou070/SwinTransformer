@@ -125,9 +125,12 @@ class WindowAttention(nn.Module):
         qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
 
+        print(f'query : {q.shape}')
+        print(f'key : {k.shape}')
+        print(f'value : {v.shape}')
+
         q = q * self.scale
         attn = (q @ k.transpose(-2, -1))
-
         relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
             self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
         relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
@@ -203,9 +206,9 @@ class SwinTransformerBlock(nn.Module):
         assert 0 <= self.shift_size < self.window_size, "shift_size must in 0-window_size"
 
         self.norm1 = norm_layer(dim)
-        self.attn = WindowAttention(
-            dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
-            qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+        self.attn = WindowAttention(dim,
+                                    window_size=to_2tuple(self.window_size), num_heads=num_heads,
+                                    qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -263,7 +266,8 @@ class SwinTransformerBlock(nn.Module):
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
+        attn_windows = self.attn(x_windows,
+                                 mask=self.attn_mask)  # nW*B, window_size*window_size, C
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
