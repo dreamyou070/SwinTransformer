@@ -12,6 +12,7 @@ def build_dataset(is_train, config):
     transform = build_transform(is_train, config)
     if config.DATA.DATASET == 'imagenet':
         prefix = 'train' if is_train else 'val'
+
         if config.DATA.ZIP_MODE:
             ann_file = prefix + "_map.txt"
             prefix = prefix + ".zip@/"
@@ -21,8 +22,11 @@ def build_dataset(is_train, config):
             config.DATA.DATA_PATH = r"/home/dreamyou070/MyData/anomaly_detection/MVTec3D-AD/carrot"
             root = os.path.join(config.DATA.DATA_PATH,
                                 prefix)
-            dataset = datasets.ImageFolder(root, transform=transform)
+            dataset = datasets.ImageFolder(root,
+                                           transform=transform)
+
         nb_classes = 1000
+
     elif config.DATA.DATASET == 'imagenet22K':
         prefix = 'ILSVRC2011fall_whole'
         if is_train:
@@ -39,26 +43,17 @@ def main(args, config) :
 
     print(f' step 1. model')
     model = build_model(config)
+    patch_embed = model.patch_embed
+    print(f'patch_embed : {patch_embed}')
 
     print(f' step 2. data')
-    dataset_val, _ = build_dataset(is_train=False,
-                                   config=config)
-    sampler_val = torch.utils.data.distributed.DistributedSampler(dataset_val,
-                                                                  shuffle=config.TEST.SHUFFLE)
-    data_loader_val = torch.utils.data.DataLoader(dataset_val,
-                                                  sampler=sampler_val,
-                                                  batch_size=config.DATA.BATCH_SIZE,
-                                                  shuffle=False,
-                                                  num_workers=config.DATA.NUM_WORKERS,
-                                                  pin_memory=config.DATA.PIN_MEMORY,
-                                                  drop_last=False)
-
-    for idx, (images, target) in enumerate(data_loader_val):
-        images = images.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+    images = torch.randn(1,4,224,224)
+    patch_embedded_img = patch_embed(images)
+    print(f'patch_embedded_img : {patch_embedded_img.shape}')
+    #    target = torch.randn(1,4,64,64)
         # compute output
-        with torch.cuda.amp.autocast(enabled=config.AMP_ENABLE):
-            output = model(images)
+    #    with torch.cuda.amp.autocast(enabled=config.AMP_ENABLE):
+     #       output = model(images)
 
 
 if __name__ == "__main__":
