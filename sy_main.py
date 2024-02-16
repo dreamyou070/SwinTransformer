@@ -18,7 +18,9 @@ def build_dataset(is_train, config):
             dataset = CachedImageFolder(config.DATA.DATA_PATH, ann_file, prefix, transform,
                                         cache_mode=config.DATA.CACHE_MODE if is_train else 'part')
         else:
-            root = os.path.join(config.DATA.DATA_PATH, prefix)
+            print(f'config.DATA.DATA_PATH: {config.DATA.DATA_PATH}')
+            root = os.path.join(config.DATA.DATA_PATH,
+                                prefix)
             dataset = datasets.ImageFolder(root, transform=transform)
         nb_classes = 1000
     elif config.DATA.DATASET == 'imagenet22K':
@@ -39,8 +41,10 @@ def main(args, config) :
     model = build_model(config)
 
     print(f' step 2. data')
-    dataset_val, _ = build_dataset(is_train=False, config=config)
-    sampler_val = torch.utils.data.distributed.DistributedSampler(dataset_val, shuffle=config.TEST.SHUFFLE)
+    dataset_val, _ = build_dataset(is_train=False,
+                                   config=config)
+    sampler_val = torch.utils.data.distributed.DistributedSampler(dataset_val,
+                                                                  shuffle=config.TEST.SHUFFLE)
     data_loader_val = torch.utils.data.DataLoader(dataset_val,
                                                   sampler=sampler_val,
                                                   batch_size=config.DATA.BATCH_SIZE,
